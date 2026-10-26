@@ -1,0 +1,24 @@
+node_modules
+.next
+.next-e2e
+out
+build
+.DS_Store
+*.log
+.env
+.env.local
+.env.*.local
+local.db
+local.db-*
+*.db
+*.db-shm
+*.db-wal
+test-results
+playwright-report
+coverage
+*.tsbuildinfo
+.superpowers
+next-env.d.ts
+
+# Local prompt notes (contains development credentials)
+prompting.text

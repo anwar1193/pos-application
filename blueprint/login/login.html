@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+
+<html lang="id"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta content="web_blank" name="shell-type"/>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+    @layer base {
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+      }
+      body {
+        overscroll-behavior: none;
+      }
+    }
+    ::-webkit-scrollbar {
+      display: none;
+    }
+    /* Clean micro-perforated receipt edge */
+    .receipt-perforation {
+      background-image: radial-gradient(circle at 100% 50%, #F6F7F2 6px, transparent 6.5px);
+      background-size: 12px 24px;
+      background-repeat: repeat-y;
+      background-position: right top;
+    }
+  </style>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "primary-container": "#14523B",
+            "forest-hover": "#0E3F2D",
+            "primary": "#003A27",
+            "paper": "#F6F7F2",
+            "on-surface": "#13201A",
+            "text-muted": "#4C5A52",
+            "border": "#DCE4DD",
+            "warning-amber": "#B45309",
+            "error-brick": "#B42318",
+            "error-brick-bg": "#FEE4E2"
+          },
+          fontFamily: {
+            body: ["Archivo Narrow", "sans-serif"],
+            display: ["Archivo Narrow", "sans-serif"]
+          }
+        }
+      }
+    };
+  </script>
+</head>
+<body class="bg-[#F6F7F2] font-body text-on-surface antialiased h-screen w-screen overflow-hidden selection:bg-[#B45309]/20 selection:text-[#13201A]">
+<!-- Desktop Fullscreen Viewport (1440x900 Landscape Optimized) -->
+<main class="w-screen h-screen min-h-screen flex flex-row overflow-hidden bg-[#F6F7F2]">
+<!-- LEFT BRAND PANEL: 42% (min-w-[480px]), Deep Forest Green, Full Height -->
+<section class="relative w-[42%] min-w-[480px] h-full bg-[#14523B] text-white p-12 lg:p-16 flex flex-col justify-between overflow-hidden select-none z-10 shrink-0 receipt-perforation">
+<!-- Subtle Ledger Watermark / Ambient Grid Pattern -->
+<div class="absolute inset-0 pointer-events-none opacity-[0.06]">
+<svg class="w-full h-full" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<pattern height="28" id="ledger-grid" patternunits="userSpaceOnUse" width="28">
+<path d="M 28 0 L 0 0 0 28" fill="none" stroke="#FFFFFF" stroke-width="1"></path>
+</pattern>
+</defs>
+<rect fill="url(#ledger-grid)" height="100%" width="100%"></rect>
+</svg>
+</div>
+<!-- Top Branding: Wordmark & Status Pill -->
+<header class="relative z-10 flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div class="w-9 h-9 rounded bg-white/10 border border-white/20 flex items-center justify-center text-white">
+<span class="material-symbols-outlined text-[22px]">point_of_sale</span>
+</div>
+<div class="flex flex-col">
+<span class="font-bold text-lg tracking-tight leading-none text-white">POS Admin</span>
+<span class="text-[10px] tracking-widest uppercase font-semibold text-white/70 mt-1">SISTEM BACK-OFFICE V2.4</span>
+</div>
+</div>
+<span class="inline-flex items-center px-2.5 py-1 rounded bg-[#0E3F2D] text-[11px] font-semibold text-emerald-300 tracking-wider uppercase border border-white/10">
+          Operasional Kasir
+        </span>
+</header>
+<!-- Center Headline Content -->
+<div class="relative z-10 max-w-lg my-auto py-8">
+<div class="w-10 h-1 bg-[#97D3B5] mb-6 rounded-full"></div>
+<h1 class="text-4xl lg:text-[42px] font-bold text-white leading-[1.2] tracking-tight">
+          Satu tempat untuk mengelola toko, pengguna, dan akses.
+        </h1>
+<p class="mt-5 text-base text-white/80 leading-relaxed max-w-md font-normal">
+          Pantau seluruh ekosistem ritel dengan disiplin buku kas fisik dan presisi digital terpadu.
+        </p>
+</div>
+<!-- Bottom Texture & Footer: Subtle Ledger Tally & Copyright -->
+<footer class="relative z-10 flex flex-col gap-4 pt-6 border-t border-white/10">
+<!-- Tally marks motif representing operational count -->
+<div class="flex items-center gap-6 opacity-40">
+<div class="flex items-center gap-1.5" title="Buku Kas Operasional">
+<span class="inline-block w-0.5 h-4 bg-white"></span>
+<span class="inline-block w-0.5 h-4 bg-white"></span>
+<span class="inline-block w-0.5 h-4 bg-white"></span>
+<span class="inline-block w-0.5 h-4 bg-white"></span>
+<span class="inline-block w-5 h-0.5 bg-white -rotate-45 -ml-4"></span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="inline-block w-0.5 h-4 bg-white"></span>
+<span class="inline-block w-0.5 h-4 bg-white"></span>
+<span class="inline-block w-0.5 h-4 bg-white"></span>
+<span class="inline-block w-0.5 h-4 bg-white"></span>
+<span class="inline-block w-5 h-0.5 bg-white -rotate-45 -ml-4"></span>
+</div>
+<span class="text-[11px] font-semibold tracking-wider uppercase text-white/80">
+            Shift 01 Aktif · Terminal Utama
+          </span>
+</div>
+<div class="flex items-center justify-between text-xs text-white/60">
+<span>© 2026 POS Admin · Semua Layanan Aktif</span>
+<span class="flex items-center gap-1.5 text-white/80">
+<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            Sistem Siap
+          </span>
+</div>
+</footer>
+</section>
+<!-- RIGHT FORM AREA: 58% (flex-1), Paper Canvas, Left Aligned & Perfectly Centered Vertically -->
+<section class="flex-1 h-full bg-[#F6F7F2] flex flex-col justify-between items-start px-16 lg:px-24 py-12 overflow-y-auto">
+<!-- Top context indicator for clerks / admin -->
+<div class="w-full flex justify-end">
+<div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white border border-[#DCE4DD] text-xs text-[#4C5A52]">
+<span class="w-2 h-2 rounded-full bg-emerald-600"></span>
+<span>Terminal Pengelola #01</span>
+</div>
+</div>
+<!-- Centered Strict 400px Form Box -->
+<div class="w-full max-w-[400px] my-auto">
+<!-- Title and Description -->
+<div class="mb-6">
+<h2 class="text-3xl font-bold text-[#13201A] tracking-tight">
+            Masuk ke POS Admin
+          </h2>
+<p class="text-sm text-[#4C5A52] mt-1.5">
+            Gunakan email dan password akun Anda.
+          </p>
+</div>
+<!-- Credential Error Alert Banner -->
+<div class="flex items-start gap-3 p-3.5 mb-6 rounded-lg bg-[#FEE4E2] border border-[#B42318]/30 text-xs text-[#B42318] transition-all" id="credential-alert" role="alert">
+<span class="material-symbols-outlined text-[18px] shrink-0 mt-0.5">error</span>
+<div class="flex flex-col flex-1">
+<span class="font-semibold text-xs text-[#B42318]">Autentikasi Terkendala</span>
+<span class="text-[#B42318]/90 mt-0.5 leading-snug">
+              Email atau password salah. Periksa kembali lalu coba lagi.
+            </span>
+</div>
+<button aria-label="Tutup peringatan" class="text-[#B42318] hover:opacity-75 focus:outline-none" onclick="document.getElementById('credential-alert').remove()" type="button">
+<span class="material-symbols-outlined text-[16px]">close</span>
+</button>
+</div>
+<!-- Operational Login Form -->
+<form class="flex flex-col gap-4" id="admin-login-form" onsubmit="event.preventDefault(); handleLoginSubmit();">
+<!-- Email Input Field -->
+<div class="flex flex-col gap-1.5">
+<label class="text-xs font-semibold text-[#13201A] flex justify-between items-center" for="admin-email">
+<span>Email</span>
+<span class="text-[11px] font-normal text-[#4C5A52]">Format bisnis terdaftar</span>
+</label>
+<div class="relative flex items-center">
+<input autocomplete="username" class="w-full h-11 px-3.5 rounded-lg border border-[#DCE4DD] bg-white text-sm text-[#13201A] placeholder:text-gray-400 focus:outline-none focus:border-[#B45309] focus:ring-2 focus:ring-[#B45309]/30 transition-colors shadow-none" id="admin-email" inputmode="email" name="email" placeholder="nama@toko.com" required="" type="email" value="rani@demostore.id"/>
+</div>
+</div>
+<!-- Password Input Field with Toggle -->
+<div class="flex flex-col gap-1.5">
+<label class="text-xs font-semibold text-[#13201A]" for="admin-password">
+              Password
+            </label>
+<div class="relative flex items-center">
+<input autocomplete="current-password" class="w-full h-11 pl-3.5 pr-20 rounded-lg border border-[#DCE4DD] bg-white text-sm text-[#13201A] placeholder:text-gray-400 focus:outline-none focus:border-[#B45309] focus:ring-2 focus:ring-[#B45309]/30 transition-colors shadow-none" id="admin-password" name="password" placeholder="Masukkan kata sandi" required="" type="password" value="demoKasir2026!"/>
+<!-- Integrated Password Visibility Toggle Button -->
+<button aria-label="Tampilkan atau sembunyikan password" aria-pressed="false" class="absolute right-1.5 top-1/2 -translate-y-1/2 px-2 py-1 rounded flex items-center gap-1 text-[#4C5A52] hover:text-[#13201A] hover:bg-black/5 transition-colors text-xs font-medium" id="toggle-password-btn" onclick="togglePasswordVisibility()" type="button">
+<span class="material-symbols-outlined text-[16px]" id="eye-icon">visibility</span>
+<span id="eye-text">Lihat</span>
+</button>
+</div>
+</div>
+<!-- Submit Button -->
+<button class="w-full h-11 rounded-lg bg-[#14523B] hover:bg-[#0E3F2D] active:bg-[#003A27] text-white font-semibold text-sm transition-colors mt-2 mb-1 flex items-center justify-center gap-2 shadow-none focus:outline-none focus:ring-2 focus:ring-[#B45309]/50 cursor-pointer" id="btn-submit" type="submit">
+<span id="submit-text">Masuk</span>
+<span class="hidden material-symbols-outlined animate-spin text-[18px]" id="submit-spinner">progress_activity</span>
+</button>
+<!-- Helper Links -->
+<div class="flex items-center justify-between text-xs text-[#4C5A52] pt-1">
+<span>Lupa password?</span>
+<a class="text-[#14523B] font-semibold hover:underline focus:outline-none rounded" href="mailto:admin@demostore.id?subject=Bantuan%20Akses%20POS%20Admin">
+              Hubungi administrator toko.
+            </a>
+</div>
+</form>
+</div>
+<!-- Bottom Context Chip -->
+<div class="w-full max-w-[400px] pt-4 border-t border-[#DCE4DD] flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-emerald-100 text-[#14523B] flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[18px]">storefront</span>
+</div>
+<div class="flex flex-col">
+<span class="text-xs font-semibold text-[#13201A]">Pusat Kendali Demo Store</span>
+<span class="text-[11px] text-[#4C5A52] leading-tight">Akses terbatas hanya untuk peran Owner, Admin, dan Manajer.</span>
+</div>
+</div>
+</section>
+</main>
+<!-- Interactive JavaScript Logic -->
+<script>
+    function togglePasswordVisibility() {
+      const passwordInput = document.getElementById('admin-password');
+      const toggleBtn = document.getElementById('toggle-password-btn');
+      const eyeIcon = document.getElementById('eye-icon');
+      const eyeText = document.getElementById('eye-text');
+      
+      const isPassword = passwordInput.type === 'password';
+      
+      if (isPassword) {
+        passwordInput.type = 'text';
+        toggleBtn.setAttribute('aria-pressed', 'true');
+        eyeIcon.textContent = 'visibility_off';
+        eyeText.textContent = 'Sembunyikan';
+      } else {
+        passwordInput.type = 'password';
+        toggleBtn.setAttribute('aria-pressed', 'false');
+        eyeIcon.textContent = 'visibility';
+        eyeText.textContent = 'Lihat';
+      }
+    }
+
+    function handleLoginSubmit() {
+      const btn = document.getElementById('btn-submit');
+      const text = document.getElementById('submit-text');
+      const spinner = document.getElementById('submit-spinner');
+
+      btn.disabled = true;
+      btn.classList.add('opacity-80', 'cursor-not-allowed');
+      text.textContent = 'Memverifikasi...';
+      spinner.classList.remove('hidden');
+
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.classList.remove('opacity-80', 'cursor-not-allowed');
+        text.textContent = 'Masuk';
+        spinner.classList.add('hidden');
+      }, 1000);
+    }
+  </script>
+</body></html>

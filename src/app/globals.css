@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  background: #f6f7f2;
+  color: #13201a;
+  font-variant-numeric: tabular-nums;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: rgba(180, 83, 9, 0.2);
+}
+
+.material-symbols-outlined {
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.receipt-perforation {
+  background-image: radial-gradient(circle at 100% 50%, #f6f7f2 6px, transparent 6.5px);
+  background-size: 12px 24px;
+  background-repeat: repeat-y;
+  background-position: right top;
+}
+
+.focus-ring:focus-visible {
+  outline: 3px solid rgba(180, 83, 9, 0.35);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
