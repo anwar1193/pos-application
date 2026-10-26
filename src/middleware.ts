@@ -1,7 +1,22 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 const SESSION_COOKIE = "pos_session";
-const PROTECTED_PREFIXES = ["/dashboard", "/users", "/account"];
+const PROTECTED_PREFIXES = [
+  "/dashboard",
+  "/users",
+  "/account",
+  "/pos",
+  "/sales",
+  "/shifts",
+  "/catalog",
+  "/inventory",
+  "/customers",
+  "/suppliers",
+  "/purchases",
+  "/reports",
+  "/settings",
+  "/audit",
+];
 
 /**
  * Cheap first gate: redirect visitors with no session cookie away from admin
@@ -28,9 +43,26 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  return NextResponse.next();
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-pos-path", `${pathname}${request.nextUrl.search}`);
+  return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/users/:path*", "/account/:path*"],
+  matcher: [
+    "/dashboard/:path*",
+    "/users/:path*",
+    "/account/:path*",
+    "/pos/:path*",
+    "/sales/:path*",
+    "/shifts/:path*",
+    "/catalog/:path*",
+    "/inventory/:path*",
+    "/customers/:path*",
+    "/suppliers/:path*",
+    "/purchases/:path*",
+    "/reports/:path*",
+    "/settings/:path*",
+    "/audit/:path*",
+  ],
 };

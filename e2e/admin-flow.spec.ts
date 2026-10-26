@@ -14,7 +14,16 @@ async function login(page: Page, email: string, password: string) {
   await page.goto("/login");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(password);
-  await page.getByRole("button", { name: "Masuk", exact: true }).click();
+  // In dev mode the first visit compiles slowly, so a click can land before
+  // React hydrates and the native form submit only reloads /login.
+  await expect(async () => {
+    if (new URL(page.url()).pathname === "/login") {
+      await page.locator("#email").fill(email);
+      await page.locator("#password").fill(password);
+      await page.getByRole("button", { name: "Masuk", exact: true }).click();
+    }
+    await page.waitForURL((url) => url.pathname !== "/login", { timeout: 10_000 });
+  }).toPass({ timeout: 45_000 });
 }
 
 async function inviteViaUi(
@@ -42,7 +51,7 @@ async function acceptInvite(page: Page, inviteUrl: string, password: string) {
   await expect(page.getByRole("heading", { name: "Akun aktif" })).toBeVisible();
 }
 
-test("owner invites admin, admin invites cashier, cashier is denied, owner logs out", async ({
+test("owner invites admin, admin invites cashier, cashier opens POS, owner logs out", async ({
   browser,
 }) => {
   test.setTimeout(180_000);
@@ -76,8 +85,9 @@ test("owner invites admin, admin invites cashier, cashier is denied, owner logs 
     const cashierPage = await cashierContext.newPage();
     await acceptInvite(cashierPage, cashierInviteUrl, CASHIER_PASSWORD);
     await login(cashierPage, CASHIER_EMAIL, CASHIER_PASSWORD);
-    await expect(cashierPage.getByText("Akun Anda tidak aktif")).toBeVisible();
-    await expect(cashierPage).toHaveURL(/\/login/);
+    await expect(cashierPage).toHaveURL(/\/pos$/);
+    await expect(cashierPage.getByRole("heading", { name: "Transaksi Baru" })).toBeVisible();
+    await expect(cashierPage.getByRole("link", { name: "Pengaturan" })).toHaveCount(0);
 
     await ownerPage.getByRole("button", { name: "Menu profil" }).click();
     await ownerPage.getByRole("menuitem", { name: /Keluar$/ }).click();

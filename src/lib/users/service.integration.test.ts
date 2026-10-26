@@ -1,12 +1,20 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { invitations, memberships, sessions, users } from "@/db/schema";
+import {
+  auditLogs,
+  invitations,
+  memberBranches,
+  memberships,
+  sessions,
+  users,
+} from "@/db/schema";
 import { login } from "@/lib/auth/login";
 import { validateSessionToken } from "@/lib/auth/session";
 import {
   acceptInvitation,
   createPasswordResetLink,
   deactivateUser,
+  deleteUser,
   getUserDetail,
   inviteUser,
   listUsers,
@@ -155,6 +163,28 @@ describe("user management service", () => {
     await expect(
       acceptInvitation(token, "AnotherPass2026!", TEST_META, ctx.db),
     ).rejects.toMatchObject({ code: "INVITATION_EXPIRED" });
+  });
+
+  it("scopes a cashier invitation to the first active branch when none is chosen", async () => {
+    await inviteUser(
+      owner.session,
+      {
+        name: "Kasir Baru",
+        email: "new-cashier@demostore.id",
+        roleId: rbac.roleIds.cashier,
+      },
+      TEST_META,
+      ctx.db,
+    );
+
+    const invitedUser = (
+      await ctx.db.select().from(users).where(eq(users.email, "new-cashier@demostore.id"))
+    )[0];
+    const membership = (
+      await ctx.db.select().from(memberships).where(eq(memberships.userId, invitedUser.id))
+    )[0];
+
+    expect(membership.defaultBranchId).toBe(org.branchId);
   });
 
   it("revoking an invitation only suspends the invited membership", async () => {
@@ -342,5 +372,211 @@ describe("user management service", () => {
       await ctx.db.select().from(sessions).where(eq(sessions.userId, admin.userId))
     ).filter((session) => session.revokedAt === null);
     expect(active).toHaveLength(0);
+  });
+
+  it("deletes a member from the organization and disables their only account", async () => {
+    const cashierRow = await seedUser(ctx.db, {
+      email: "cashier@demostore.id",
+      name: "Kasir Sore",
+      password: "CashierPass2026!",
+      roleId: rbac.roleIds.cashier,
+      organizationId: org.organizationId,
+      branchId: org.branchId,
+    });
+    const { token } = await sessionFor(ctx.db, cashierRow.userId, org.organizationId);
+    await ctx.db
+      .insert(memberBranches)
+      .values({ membershipId: cashierRow.membershipId, branchId: org.branchId });
+
+    const result = await deleteUser(owner.session, cashierRow.userId, TEST_META, ctx.db);
+    expect(result.accountDisabled).toBe(true);
+
+    expect(
+      await ctx.db
+        .select()
+        .from(memberships)
+        .where(eq(memberships.id, cashierRow.membershipId)),
+    ).toHaveLength(0);
+    expect(
+      await ctx.db
+        .select()
+        .from(memberBranches)
+        .where(eq(memberBranches.membershipId, cashierRow.membershipId)),
+    ).toHaveLength(0);
+
+    const storedUser = (
+      await ctx.db.select().from(users).where(eq(users.id, cashierRow.userId)).limit(1)
+    )[0]!;
+    expect(storedUser.status).toBe("disabled");
+
+    expect(await validateSessionToken(token, ctx.db)).toBeNull();
+    await expect(
+      login(
+        {
+          email: "cashier@demostore.id",
+          password: "CashierPass2026!",
+          ipHash: "ip-1",
+          userAgent: "vitest",
+          requestId: "req-deleted-login",
+        },
+        ctx.db,
+      ),
+    ).rejects.toMatchObject({ code: "AUTH_ACCOUNT_INACTIVE" });
+
+    const audit = await ctx.db
+      .select()
+      .from(auditLogs)
+      .where(eq(auditLogs.action, "user.deleted"));
+    expect(audit).toHaveLength(1);
+    expect(audit[0]?.entityId).toBe(cashierRow.userId);
+    expect(audit[0]?.organizationId).toBe(org.organizationId);
+  });
+
+  it("keeps the account active when the user still belongs to another organization", async () => {
+    const other = await seedOrganization(ctx.db, "Toko Cabang");
+    const sharedRow = await seedUser(ctx.db, {
+      email: "shared@demostore.id",
+      name: "Staf Bersama",
+      password: "SharedPass2026!",
+      roleId: rbac.roleIds.cashier,
+      organizationId: org.organizationId,
+      branchId: org.branchId,
+    });
+    const otherMembershipId = "mem_shared_other";
+    const now = new Date();
+    await ctx.db.insert(memberships).values({
+      id: otherMembershipId,
+      organizationId: other.organizationId,
+      userId: sharedRow.userId,
+      roleId: rbac.roleIds.cashier,
+      defaultBranchId: other.branchId,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const result = await deleteUser(owner.session, sharedRow.userId, TEST_META, ctx.db);
+    expect(result.accountDisabled).toBe(false);
+
+    const storedUser = (
+      await ctx.db.select().from(users).where(eq(users.id, sharedRow.userId)).limit(1)
+    )[0]!;
+    expect(storedUser.status).toBe("active");
+    expect(
+      await ctx.db
+        .select()
+        .from(memberships)
+        .where(eq(memberships.id, otherMembershipId)),
+    ).toHaveLength(1);
+
+    const loginResult = await login(
+      {
+        email: "shared@demostore.id",
+        password: "SharedPass2026!",
+        ipHash: "ip-1",
+        userAgent: "vitest",
+        requestId: "req-shared-login",
+      },
+      ctx.db,
+    );
+    expect(loginResult.redirectTo).toBe("/pos");
+  });
+
+  it("revokes a pending invitation so the email can be invited again", async () => {
+    const invitation = await inviteUser(
+      owner.session,
+      {
+        name: "Kasir Baru",
+        email: "reinvite@demostore.id",
+        roleId: rbac.roleIds.cashier,
+        branchId: null,
+      },
+      TEST_META,
+      ctx.db,
+    );
+    const invitedUser = (
+      await ctx.db.select().from(users).where(eq(users.email, "reinvite@demostore.id")).limit(1)
+    )[0]!;
+
+    await deleteUser(owner.session, invitedUser.id, TEST_META, ctx.db);
+
+    const storedInvitation = (
+      await ctx.db
+        .select()
+        .from(invitations)
+        .where(eq(invitations.id, invitation.invitationId))
+        .limit(1)
+    )[0]!;
+    expect(storedInvitation.status).toBe("revoked");
+
+    const storedUser = (
+      await ctx.db.select().from(users).where(eq(users.id, invitedUser.id)).limit(1)
+    )[0]!;
+    expect(storedUser.status).toBe("disabled");
+
+    const reinvite = await inviteUser(
+      owner.session,
+      {
+        name: "Kasir Baru",
+        email: "reinvite@demostore.id",
+        roleId: rbac.roleIds.cashier,
+        branchId: null,
+      },
+      TEST_META,
+      ctx.db,
+    );
+    expect(reinvite.invitationId).toBeTruthy();
+
+    const activeInvitations = (
+      await ctx.db
+        .select()
+        .from(invitations)
+        .where(eq(invitations.organizationId, org.organizationId))
+    ).filter((row) => row.status === "pending");
+    expect(activeInvitations).toHaveLength(1);
+
+    await acceptInvitation(
+      tokenFromUrl(reinvite.inviteUrl, "invite"),
+      "ReinvitePass2026!",
+      TEST_META,
+      ctx.db,
+    );
+    const reactivated = (
+      await ctx.db.select().from(users).where(eq(users.id, invitedUser.id)).limit(1)
+    )[0]!;
+    expect(reactivated.status).toBe("active");
+  });
+
+  it("refuses users to delete their own account", async () => {
+    await expect(
+      deleteUser(owner.session, owner.userId, TEST_META, ctx.db),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("prevents an admin from deleting the owner", async () => {
+    await expect(
+      deleteUser(admin.session, owner.userId, TEST_META, ctx.db),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("does not delete a user from another organization (IDOR)", async () => {
+    const other = await seedOrganization(ctx.db, "Other Store");
+    const outsider = await seedUser(ctx.db, {
+      email: "outsider@other.id",
+      password: "OutsiderPass2026!",
+      roleId: rbac.roleIds.cashier,
+      organizationId: other.organizationId,
+      branchId: other.branchId,
+    });
+
+    await expect(
+      deleteUser(owner.session, outsider.userId, TEST_META, ctx.db),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(
+      await ctx.db
+        .select()
+        .from(memberships)
+        .where(eq(memberships.id, outsider.membershipId)),
+    ).toHaveLength(1);
   });
 });

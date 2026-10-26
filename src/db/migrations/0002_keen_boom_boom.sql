@@ -1,0 +1,1 @@
+ALTER TABLE `shifts` ADD `approved_by` text REFERENCES users(id);

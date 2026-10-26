@@ -1,7 +1,10 @@
 # POS Admin
 
-Web admin untuk operasional toko: autentikasi, dashboard, dan manajemen pengguna.
-Implementasi dari [issue #2](https://github.com/anwar1193/pos-application/issues/2).
+Web admin lengkap untuk operasional toko: autentikasi, dashboard, katalog,
+inventaris, kasir (POS), shift, pembelian, pelanggan, supplier, laporan, audit
+log, dan pengaturan organisasi. Implementasi web dari
+[issue #1](https://github.com/anwar1193/pos-application/issues/1); aplikasi
+mobile berada di luar cakupan repositori ini.
 
 ## Stack
 
@@ -42,6 +45,13 @@ Buka `http://localhost:3000`. Masuk memakai `SEED_OWNER_EMAIL` dan
 | `SEED_OWNER_PASSWORD` | saat seed | Password owner awal, minimal 12 karakter |
 | `SEED_ORGANIZATION_NAME` | tidak | Nama organisasi seed |
 | `SEED_BRANCH_NAME` | tidak | Nama cabang seed |
+| `RESEND_API_KEY` | tidak | API key Resend untuk pengiriman email undangan/reset |
+| `EMAIL_FROM` | tidak | Alamat pengirim email, mis. `POS Admin <no-reply@toko.id>` |
+| `EMAIL_DEV_MODE` | tidak | `true` untuk menampilkan tautan undangan/reset di response saat email tidak terkirim |
+
+Tanpa `RESEND_API_KEY` dan `EMAIL_FROM`, email tidak dikirim. Tautan undangan
+tetap ditampilkan sekali di UI, dan tautan reset password dikembalikan pada
+response development agar alur dapat diuji lokal.
 
 ## Scripts
 
@@ -69,21 +79,76 @@ npx playwright install chromium
 E2E memakai database terpisah `e2e.db` yang dibuat ulang setiap run dan
 tidak menyentuh `local.db`.
 
+## Cakupan
+
+Yang termasuk: seluruh alur back-office web dari issue, termasuk POS, katalog,
+inventaris, pembelian, shift, laporan, audit, pengaturan, dan pemilihan
+organisasi/cabang untuk pengguna dengan lebih dari satu keanggotaan. Gambar
+produk memakai URL (belum ada unggah berkas ke object storage).
+
+Ekstensi opsional yang belum dikerjakan: varian produk, price list bertingkat,
+pusat notifikasi, dan aplikasi mobile. Varian produk ditandai opsional pada
+issue dan tidak menghalangi alur inti.
+
+## Halaman web
+| Route | Akses | Fungsi |
+|---|---|---|
+| `/login` | publik | Masuk dengan email dan password |
+| `/register` | publik | Daftar bisnis baru + cabang pertama + akun owner |
+| `/forgot-password` | publik | Minta tautan reset password |
+| `/reset-password/[token]` | publik | Atur password baru dari tautan |
+| `/invite/[token]` | publik | Aktifkan akun dari undangan |
+| `/dashboard` | `dashboard.view` | Ringkasan penjualan, stok rendah, aktivitas |
+| `/pos` | `sale.create` | Kasir: cari produk, keranjang, diskon, pajak, multi-pembayaran, parkir, struk |
+| `/sales` | `sale.view` | Daftar transaksi + filter |
+| `/sales/[id]` | `sale.view` | Detail transaksi, cetak/unduh struk, void, refund |
+| `/shifts` | `shift.view` | Buka/tutup shift, kas masuk/keluar, selisih kas, persetujuan |
+| `/catalog` | `catalog.view` | Produk, kategori, satuan, barcode, impor/ekspor CSV, bulk update |
+| `/inventory` | `inventory.view` | Stok per cabang, penyesuaian, transfer, opname, riwayat pergerakan |
+| `/inventory/opname/[id]` | `inventory.opname` | Hitung fisik dan selesaikan opname |
+| `/customers` | `customer.view` | Daftar pelanggan dan riwayat belanja |
+| `/customers/[id]` | `customer.view` | Detail pelanggan |
+| `/suppliers` | `supplier.view` | Daftar supplier |
+| `/purchases` | `purchase.view` | Daftar purchase order dan statusnya |
+| `/purchases/new` | `purchase.manage` | Buat purchase order |
+| `/purchases/[id]` | `purchase.view` | Detail PO, kirim, terima barang, batalkan |
+| `/reports` | `report.view` | Laporan penjualan, pembayaran, produk, margin, stok, mutasi, pembelian, refund, void, rekonsiliasi shift + CSV/cetak |
+| `/users` | `user.view` | Daftar pengguna dan status |
+| `/users/invite` | `user.invite` | Undang pengguna baru |
+| `/users/[id]` | `user.view` | Detail pengguna, role, cabang, sesi, reset password |
+| `/settings` | `settings.manage` | Profil bisnis, pajak, cabang, metode pembayaran |
+| `/audit` | `audit.view` | Audit log dengan filter |
+| `/account` | login | Profil sendiri |
+| `/account/password` | login | Ganti password sendiri |
+
 ## Struktur
 
 ```text
 src/
   app/
-    (dashboard)/        dashboard, users, account (dilindungi guard)
-    api/                route handler auth, users, dashboard
+    (dashboard)/        dashboard, POS, katalog, inventaris, penjualan,
+                        shift, pembelian, pelanggan, supplier, laporan,
+                        pengguna, pengaturan, audit, akun
+    api/                route handler auth, katalog, inventaris, POS,
+                        pembelian, laporan, pengaturan, audit
     invite/[token]/     penerimaan undangan (publik)
     login/              halaman masuk
+    register/           pendaftaran bisnis baru
+    forgot-password/    permintaan reset password
     reset-password/     reset password via token (publik)
   components/           shell admin dan komponen UI
   db/                   schema, migrasi, seed
   lib/
-    auth/               session, login, RBAC, rate limit, token
-    users/              service manajemen pengguna
+    auth/               session, login, register, RBAC, rate limit, token
+    branches/           scope dan resolusi cabang
+    catalog/            produk, kategori, satuan, CSV
+    inventory/          ledger stok, penyesuaian, transfer, opname
+    sales/              transaksi, pembayaran, refund, void, parkir
+    shifts/             buka/tutup shift dan rekonsiliasi kas
+    purchasing/         supplier dan purchase order
+    reports/            agregasi seluruh laporan
+    settings/           organisasi, cabang, metode pembayaran
+    users/              manajemen pengguna dan undangan
     dashboard/          agregasi statistik dashboard
   middleware.ts         redirect awal berbasis cookie
 ```
@@ -93,29 +158,43 @@ src/
 - Session opaque; hanya hash SHA-256 token yang disimpan di database.
 - Cookie `pos_session`: HttpOnly, SameSite=Lax, Secure di produksi.
 - Idle timeout 7 hari, absolute timeout 30 hari.
-- Semua query data pengguna difilter `organization_id` dari session.
+- Semua query data difilter `organization_id` dari session; data cabang
+  dibatasi sesuai scope peran.
 - Permission diverifikasi di server pada setiap route dan service.
 - Rate limit login dan lockout akun setelah percobaan berulang.
 - Origin/Referer divalidasi untuk setiap mutasi.
 - Password di-hash dengan Argon2id; minimal 12 karakter.
 - Undangan dan token reset password berlaku sekali dan disimpan sebagai hash.
 - Aksi sensitif dicatat di audit log tanpa password/token/cookie.
+- Transaksi penjualan, stok, refund, void, dan shift berjalan dalam transaksi
+  database; pergerakan stok bersifat immutable.
 
 Aturan role:
 
-- Hanya Owner, Admin, dan Manager yang dapat memakai Web Admin.
+- Semua peran operasional (Owner, Admin, Manajer, Kasir, Staf Gudang) dapat
+  masuk Web Admin sesuai permission masing-masing.
+- Kasir mendapat workspace POS, transaksi, shift, dan pelanggan.
+- Staf Gudang mendapat katalog, inventaris, pembelian, dan laporan.
+- Manajer mendapat akses operasional dan laporan tanpa pengaturan organisasi.
 - Hanya Owner yang dapat memberikan role Owner/Admin.
 - Admin tidak dapat mengubah atau menonaktifkan Owner.
 - Pengguna tidak dapat menonaktifkan diri sendiri.
 - Owner aktif terakhir dilindungi.
+- Undangan staf tanpa cabang otomatis diarahkan ke cabang aktif pertama agar
+  akun langsung dapat beroperasi; cabang dapat diubah kemudian.
 
 ## Testing
 
 - **Unit**: password policy, token, matriks permission, safe redirect.
-- **Integration**: login/rate limit/lockout, session, undangan sekali pakai,
-  reset password, isolasi organisasi, proteksi Owner, pencabutan session.
+- **Integration**: register, login/rate limit/lockout, session, undangan sekali
+  pakai + scope cabang, reset password, isolasi organisasi, proteksi Owner,
+  pencabutan session, pemilihan organisasi, transaksi POS (stok, pembayaran,
+  idempotensi, void, refund), ledger inventaris (penyesuaian, transfer, opname),
+  shift (satu shift terbuka, rekonsiliasi kas, ambang persetujuan), dan katalog
+  (SKU/barcode unik, arsip, impor CSV).
 - **E2E**: owner login → dashboard → undang Admin → Admin aktif dan login →
-  Admin undang Kasir → Kasir ditolak Web Admin → logout dan session tidak valid.
+  Admin undang Kasir → Kasir membuka POS tanpa menu pengaturan → logout dan
+  session tidak valid; cookie session basi tidak membuat redirect loop.
 
 ```bash
 npm run typecheck
@@ -132,3 +211,5 @@ npm run build
 - Jangan menaruh `.env.local`, database lokal, atau token di repository.
 - Untuk Turso, isi `TURSO_DATABASE_URL` dan `TURSO_AUTH_TOKEN`, lalu jalankan
   `npm run db:migrate`.
+- Untuk email undangan/reset di produksi, isi `RESEND_API_KEY`, `EMAIL_FROM`,
+  dan pastikan `APP_URL` memakai URL publik.

@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
@@ -162,13 +163,18 @@ export function LoginForm({ nextPath }: { nextPath: string }) {
       </button>
 
       <div className="flex items-center justify-between pt-1 text-xs text-secondary">
-        <span>Lupa password?</span>
-        <a
+        <Link
           className="rounded font-semibold text-forest hover:underline focus-ring"
-          href="mailto:admin@demostore.id?subject=Bantuan%20Akses%20POS%20Admin"
+          href="/forgot-password"
         >
-          Hubungi administrator toko.
-        </a>
+          Lupa password?
+        </Link>
+        <Link
+          className="rounded font-medium text-secondary hover:text-ink hover:underline focus-ring"
+          href="/register"
+        >
+          Daftar bisnis baru
+        </Link>
       </div>
     </form>
   );

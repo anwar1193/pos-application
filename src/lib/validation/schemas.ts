@@ -48,6 +48,11 @@ export const updateUserSchema = z.object({
   defaultBranchId: z.string().max(100).nullable().optional(),
 });
 
+export const profileUpdateSchema = z.object({
+  name: z.string().trim().min(1, "Nama wajib diisi.").max(120, "Nama terlalu panjang.").optional(),
+  phone: z.string().trim().max(30, "Nomor telepon terlalu panjang.").nullable().optional(),
+});
+
 export const userListQuerySchema = z.object({
   q: z.string().trim().max(100).optional(),
   role: z.string().max(100).optional(),

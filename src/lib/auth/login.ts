@@ -11,7 +11,7 @@ import {
 } from "@/lib/auth/rate-limit";
 import { safeNextPath } from "@/lib/auth/safe-redirect";
 import { createSession } from "@/lib/auth/session";
-import { canUseWebAdmin } from "@/lib/auth/permissions";
+import { canUseWebAdmin, homePathFor } from "@/lib/auth/permissions";
 import { hashEmail, normalizeEmail } from "@/lib/auth/tokens";
 import { ERRORS } from "@/lib/http/errors";
 import {
@@ -165,7 +165,7 @@ export async function login(
     token: session.token,
     sessionId: session.sessionId,
     absoluteExpiresAt: session.absoluteExpiresAt,
-    redirectTo: safeNextPath(input.next),
+    redirectTo: safeNextPath(input.next, homePathFor(membershipRow.role.code)),
   };
 }
 

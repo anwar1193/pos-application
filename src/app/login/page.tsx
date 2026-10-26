@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { homePathFor } from "@/lib/auth/permissions";
 import { getCurrentSession } from "@/lib/auth/current-session";
 import { safeNextPath } from "@/lib/auth/safe-redirect";
 import { LoginForm } from "./login-form";
@@ -10,7 +11,7 @@ export default async function LoginPage({
 }) {
   const params = await searchParams;
   const session = await getCurrentSession();
-  if (session) redirect(safeNextPath(params.next));
+  if (session) redirect(safeNextPath(params.next, homePathFor(session.membership.roleCode)));
 
   return (
     <main className="flex min-h-screen flex-col bg-paper lg:flex-row">
@@ -98,7 +99,7 @@ export default async function LoginPage({
             <p className="mt-1.5 text-sm text-secondary">Gunakan email dan password akun Anda.</p>
           </div>
 
-          <LoginForm nextPath={safeNextPath(params.next)} />
+          <LoginForm nextPath={safeNextPath(params.next, "")} />
         </div>
 
         <div className="flex w-full max-w-[400px] items-center gap-3 border-t border-line pt-4">

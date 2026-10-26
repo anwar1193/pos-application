@@ -87,7 +87,7 @@ describe("session validation", () => {
     expect(await validateSessionToken(token, ctx.db)).toBeNull();
   });
 
-  it("rejects sessions for roles that may not use web admin", async () => {
+  it("honors a cashier session with POS permissions", async () => {
     const cashier = await seedUser(ctx.db, {
       email: "cashier@demostore.id",
       password: "CashierPass2026!",
@@ -101,7 +101,11 @@ describe("session validation", () => {
       db: ctx.db,
     });
 
-    expect(await validateSessionToken(token, ctx.db)).toBeNull();
+    const session = await validateSessionToken(token, ctx.db);
+    expect(session).not.toBeNull();
+    expect(session?.permissions).toContain("sale.create");
+    expect(session?.permissions).toContain("shift.manage");
+    expect(session?.permissions).not.toContain("settings.manage");
   });
 
   it("rejects an unknown token", async () => {

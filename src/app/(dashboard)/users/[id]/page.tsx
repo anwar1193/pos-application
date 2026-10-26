@@ -23,6 +23,7 @@ function activityLabel(action: string): string {
     "user.role_changed": "Role diubah",
     "user.deactivated": "Pengguna dinonaktifkan",
     "user.reactivated": "Pengguna diaktifkan",
+    "user.deleted": "Pengguna dihapus dari organisasi",
     "user.password_reset_requested": "Tautan reset dibuat",
     "user.password_changed": "Password diubah",
     "session.revoked": "Sesi dicabut",
@@ -53,6 +54,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
   const canEditRole =
     canUpdate && !isSelf && (actorRole === "owner" || !["owner", "admin"].includes(detail.role.code));
   const canDeactivate = has(PERMISSIONS.userDeactivate) && !isSelf && !ownerBlocked;
+  const canDelete = has(PERMISSIONS.userDeactivate) && !isSelf && !ownerBlocked;
   const canReset = has(PERMISSIONS.userResetPassword) && !ownerBlocked;
   const canRevokeSessions = has(PERMISSIONS.sessionRevoke) && !ownerBlocked;
   const canRevokeInvite = has(PERMISSIONS.userInvite);
@@ -200,6 +202,7 @@ export default async function UserDetailPage({ params }: { params: Promise<{ id:
           <UserActions
             activeSessions={detail.activeSessions}
             canDeactivate={canDeactivate}
+            canDelete={canDelete}
             canResetPassword={canReset}
             canRevokeInvite={canRevokeInvite}
             canRevokeSessions={canRevokeSessions}

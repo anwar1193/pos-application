@@ -43,6 +43,26 @@ body {
   outline-offset: 1px;
 }
 
+@media print {
+  [data-print-hide] {
+    display: none !important;
+  }
+
+  body,
+  main {
+    background: #fff !important;
+  }
+
+  main {
+    padding-top: 0 !important;
+  }
+
+  .rounded-panel {
+    border-color: #d5d9d2;
+    box-shadow: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

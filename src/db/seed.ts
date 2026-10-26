@@ -12,13 +12,34 @@ import { getDb } from "@/lib/db/client";
 import { createId } from "@/lib/ids";
 import {
   branches,
+  categories,
   memberships,
   organizations,
+  paymentMethods,
   permissions,
   rolePermissions,
   roles,
+  units,
   users,
 } from "@/db/schema";
+
+const DEFAULT_PAYMENT_METHODS = [
+  { code: "cash", name: "Tunai", sortOrder: 1 },
+  { code: "card", name: "Kartu Debit/Kredit", sortOrder: 2 },
+  { code: "transfer", name: "Transfer Bank", sortOrder: 3 },
+  { code: "qr", name: "QRIS", sortOrder: 4 },
+  { code: "manual", name: "Pembayaran Manual", sortOrder: 5 },
+];
+
+const DEFAULT_UNITS = [
+  { name: "Pcs", symbol: "pcs" },
+  { name: "Kilogram", symbol: "kg" },
+  { name: "Liter", symbol: "l" },
+  { name: "Box", symbol: "box" },
+  { name: "Pak", symbol: "pak" },
+];
+
+const DEFAULT_CATEGORIES = ["Umum", "Makanan", "Minuman"];
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -90,17 +111,21 @@ async function main() {
     await db.select().from(organizations).where(eq(organizations.slug, "demo-store")).limit(1)
   )[0];
   if (!organization) {
-    organization = {
-      id: createId("org"),
+    const organizationId = createId("org");
+    await db.insert(organizations).values({
+      id: organizationId,
       name: organizationName,
       slug: "demo-store",
       currency: "IDR",
       timezone: "Asia/Jakarta",
       status: "active",
+      taxRate: 1100,
       createdAt: now,
       updatedAt: now,
-    };
-    await db.insert(organizations).values(organization);
+    });
+    organization = (
+      await db.select().from(organizations).where(eq(organizations.id, organizationId)).limit(1)
+    )[0];
   }
 
   let branch = (
@@ -167,6 +192,47 @@ async function main() {
       createdAt: now,
       updatedAt: now,
     });
+  }
+
+  for (const method of DEFAULT_PAYMENT_METHODS) {
+    await db
+      .insert(paymentMethods)
+      .values({
+        id: createId("pm"),
+        organizationId: organization.id,
+        code: method.code,
+        name: method.name,
+        sortOrder: method.sortOrder,
+        isActive: true,
+        createdAt: now,
+      })
+      .onConflictDoNothing();
+  }
+
+  for (const unit of DEFAULT_UNITS) {
+    await db
+      .insert(units)
+      .values({
+        id: createId("unit"),
+        organizationId: organization.id,
+        ...unit,
+        createdAt: now,
+      })
+      .onConflictDoNothing();
+  }
+
+  for (const name of DEFAULT_CATEGORIES) {
+    await db
+      .insert(categories)
+      .values({
+        id: createId("cat"),
+        organizationId: organization.id,
+        name,
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoNothing();
   }
 
   console.log(

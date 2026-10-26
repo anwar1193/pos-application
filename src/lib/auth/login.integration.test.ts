@@ -167,7 +167,7 @@ describe("login", () => {
     ).rejects.toMatchObject({ code: "AUTH_ACCOUNT_LOCKED", status: 423 });
   });
 
-  it("rejects a cashier even with valid credentials (web admin role gate)", async () => {
+  it("sends a cashier to the POS after a successful login", async () => {
     await seedUser(ctx.db, {
       email: "cashier@demostore.id",
       name: "Kasir Satu",
@@ -177,18 +177,19 @@ describe("login", () => {
       branchId,
     });
 
-    await expect(
-      login(
-        {
-          email: "cashier@demostore.id",
-          password: "CashierPass2026!",
-          ipHash: "ip-1",
-          userAgent: "vitest",
-          requestId: "req-cashier",
-        },
-        ctx.db,
-      ),
-    ).rejects.toMatchObject({ code: "AUTH_ACCOUNT_INACTIVE", status: 403 });
+    const result = await login(
+      {
+        email: "cashier@demostore.id",
+        password: "CashierPass2026!",
+        ipHash: "ip-1",
+        userAgent: "vitest",
+        requestId: "req-cashier",
+      },
+      ctx.db,
+    );
+
+    expect(result.token).toBeTruthy();
+    expect(result.redirectTo).toBe("/pos");
   });
 
   it("rejects a suspended user", async () => {

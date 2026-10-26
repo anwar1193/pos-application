@@ -8,6 +8,20 @@
       "when": 1792995650828,
       "tag": "0000_naive_true_believers",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1793007543794,
+      "tag": "0001_cooing_shinobi_shaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793008161270,
+      "tag": "0002_keen_boom_boom",
+      "breakpoints": true
     }
   ]
 }

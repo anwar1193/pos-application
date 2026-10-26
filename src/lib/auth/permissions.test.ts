@@ -6,12 +6,13 @@ import {
 } from "@/lib/auth/permissions";
 
 describe("role permission matrix", () => {
-  it("allows only owner, admin, and manager into web admin", () => {
+  it("allows every operational role into web admin", () => {
     expect(canUseWebAdmin("owner")).toBe(true);
     expect(canUseWebAdmin("admin")).toBe(true);
     expect(canUseWebAdmin("manager")).toBe(true);
-    expect(canUseWebAdmin("cashier")).toBe(false);
-    expect(canUseWebAdmin("warehouse")).toBe(false);
+    expect(canUseWebAdmin("cashier")).toBe(true);
+    expect(canUseWebAdmin("warehouse")).toBe(true);
+    expect(canUseWebAdmin("unknown")).toBe(false);
   });
 
   it("gives the owner every permission", () => {
@@ -24,15 +25,32 @@ describe("role permission matrix", () => {
     expect(ROLE_PERMISSIONS.admin).toContain(PERMISSIONS.userDeactivate);
   });
 
-  it("limits managers to read-only dashboard and user access", () => {
-    expect(ROLE_PERMISSIONS.manager).toEqual([
-      PERMISSIONS.dashboardView,
-      PERMISSIONS.userView,
-    ]);
+  it("limits managers to operational access without settings control", () => {
+    expect(ROLE_PERMISSIONS.manager).toContain(PERMISSIONS.dashboardView);
+    expect(ROLE_PERMISSIONS.manager).toContain(PERMISSIONS.catalogView);
+    expect(ROLE_PERMISSIONS.manager).toContain(PERMISSIONS.inventoryAdjust);
+    expect(ROLE_PERMISSIONS.manager).toContain(PERMISSIONS.saleVoid);
+    expect(ROLE_PERMISSIONS.manager).toContain(PERMISSIONS.reportView);
+    expect(ROLE_PERMISSIONS.manager).not.toContain(PERMISSIONS.settingsManage);
+    expect(ROLE_PERMISSIONS.manager).not.toContain(PERMISSIONS.shiftManage);
+    expect(ROLE_PERMISSIONS.manager).not.toContain(PERMISSIONS.catalogManage);
+    expect(ROLE_PERMISSIONS.manager).not.toContain(PERMISSIONS.purchaseManage);
   });
 
-  it("gives cashiers and warehouse staff no web admin permissions", () => {
-    expect(ROLE_PERMISSIONS.cashier).toEqual([]);
-    expect(ROLE_PERMISSIONS.warehouse).toEqual([]);
+  it("gives cashiers the POS and shift workspace only", () => {
+    expect(ROLE_PERMISSIONS.cashier).toContain(PERMISSIONS.saleCreate);
+    expect(ROLE_PERMISSIONS.cashier).toContain(PERMISSIONS.shiftManage);
+    expect(ROLE_PERMISSIONS.cashier).toContain(PERMISSIONS.catalogView);
+    expect(ROLE_PERMISSIONS.cashier).not.toContain(PERMISSIONS.settingsManage);
+    expect(ROLE_PERMISSIONS.cashier).not.toContain(PERMISSIONS.reportView);
+    expect(ROLE_PERMISSIONS.cashier).not.toContain(PERMISSIONS.inventoryAdjust);
+  });
+
+  it("gives warehouse staff stock and purchasing access without sales", () => {
+    expect(ROLE_PERMISSIONS.warehouse).toContain(PERMISSIONS.inventoryView);
+    expect(ROLE_PERMISSIONS.warehouse).toContain(PERMISSIONS.purchaseReceive);
+    expect(ROLE_PERMISSIONS.warehouse).toContain(PERMISSIONS.reportView);
+    expect(ROLE_PERMISSIONS.warehouse).not.toContain(PERMISSIONS.saleCreate);
+    expect(ROLE_PERMISSIONS.warehouse).not.toContain(PERMISSIONS.settingsManage);
   });
 });

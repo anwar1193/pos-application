@@ -149,6 +149,30 @@ async function getBranchInOrganization(branchId: string, organizationId: string,
   return branch;
 }
 
+/**
+ * Staff roles are scoped to a branch, so a membership without one cannot open
+ * any operational screen. Fall back to the organization's first active branch
+ * when the inviter leaves the optional branch field empty.
+ */
+async function resolveStaffBranch(
+  organizationId: string,
+  roleCode: string,
+  requested: string | null | undefined,
+  db: Executor,
+): Promise<string | null> {
+  if (requested) return requested;
+  if (roleCode === "owner" || roleCode === "admin") return null;
+  const first = (
+    await db
+      .select({ id: branches.id })
+      .from(branches)
+      .where(and(eq(branches.organizationId, organizationId), eq(branches.isActive, true)))
+      .orderBy(asc(branches.createdAt))
+      .limit(1)
+  )[0];
+  return first?.id ?? null;
+}
+
 export async function listUsers(
   session: SessionContext,
   query: UserListQuery,
@@ -325,6 +349,12 @@ export async function inviteUser(
   if (input.branchId) {
     await getBranchInOrganization(input.branchId, session.organization.id, db);
   }
+  const branchId = await resolveStaffBranch(
+    session.organization.id,
+    role.code,
+    input.branchId,
+    db,
+  );
 
   let user = (await db.select().from(users).where(eq(users.email, email)).limit(1))[0];
   if (user) {
@@ -393,7 +423,7 @@ export async function inviteUser(
       organizationId: session.organization.id,
       userId: user.id,
       roleId: role.id,
-      defaultBranchId: input.branchId ?? null,
+      defaultBranchId: branchId,
       status: "invited",
       createdAt: now,
       updatedAt: now,
@@ -404,7 +434,7 @@ export async function inviteUser(
       email,
       name: input.name,
       roleId: role.id,
-      branchId: input.branchId ?? null,
+      branchId,
       tokenHash,
       invitedBy: session.user.id,
       status: "pending",
@@ -526,6 +556,45 @@ export async function updateUser(
   return getUserDetail(session, userId, db);
 }
 
+export async function updateOwnProfile(
+  session: SessionContext,
+  input: { name?: string; phone?: string | null },
+  meta: { ipHash?: string | null; userAgent?: string | null; requestId: string },
+  db: Database = getDb(),
+) {
+  const now = new Date();
+  await db.transaction(async (tx) => {
+    await tx
+      .update(users)
+      .set({
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.phone !== undefined ? { phone: input.phone || null } : {}),
+        updatedAt: now,
+      })
+      .where(eq(users.id, session.user.id));
+    await writeAudit(
+      {
+        organizationId: session.organization.id,
+        actorUserId: session.user.id,
+        action: "user.profile_updated",
+        entityType: "user",
+        entityId: session.user.id,
+        branchId: session.membership.defaultBranchId,
+        beforeData: { name: session.user.name, phone: session.user.phone },
+        afterData: {
+          name: input.name ?? session.user.name,
+          phone: input.phone !== undefined ? input.phone : session.user.phone,
+        },
+        metadata: { requestId: meta.requestId },
+        ipHash: meta.ipHash,
+        userAgent: meta.userAgent,
+      },
+      tx as unknown as Database,
+    );
+  });
+  return { id: session.user.id };
+}
+
 export async function deactivateUser(
   session: SessionContext,
   userId: string,
@@ -593,6 +662,104 @@ export async function deactivateUser(
   });
 
   return { ok: true };
+}
+
+/**
+ * Removes a user from the current organization. Transaction and audit history
+ * reference the user row, so the account itself is kept: only the membership,
+ * branch assignments, pending invitations, and active sessions are removed.
+ * When the user has no active membership left anywhere, the account is
+ * disabled. The email can be invited again afterwards.
+ */
+export async function deleteUser(
+  session: SessionContext,
+  userId: string,
+  meta: { ipHash?: string | null; userAgent?: string | null; requestId: string },
+  db: Database = getDb(),
+) {
+  requireApiPermission(session, PERMISSIONS.userDeactivate);
+  if (userId === session.user.id) {
+    throw ERRORS.forbidden("Anda tidak dapat menghapus akun sendiri.");
+  }
+  const target = await findTargetMembership(session, userId, db);
+  assertCanManageOwner(session.membership.roleCode, target.role.code);
+  if (
+    target.role.code === "owner" &&
+    target.membership.status === "active" &&
+    (await countActiveOwners(session.organization.id, db)) <= 1
+  ) {
+    throw ERRORS.lastOwner();
+  }
+
+  const now = new Date();
+  let accountDisabled = false;
+
+  await db.transaction(async (tx) => {
+    await tx.delete(memberBranches).where(eq(memberBranches.membershipId, target.membership.id));
+    await tx.delete(memberships).where(eq(memberships.id, target.membership.id));
+
+    await tx
+      .update(invitations)
+      .set({ status: "revoked" })
+      .where(
+        and(
+          eq(invitations.organizationId, session.organization.id),
+          eq(invitations.email, target.user.email),
+          eq(invitations.status, "pending"),
+        ),
+      );
+
+    await tx
+      .update(sessions)
+      .set({ revokedAt: now, revokedReason: "user_deleted" })
+      .where(
+        and(
+          eq(sessions.userId, userId),
+          eq(sessions.organizationId, session.organization.id),
+          isNull(sessions.revokedAt),
+        ),
+      );
+
+    const remaining = await tx
+      .select({ value: count() })
+      .from(memberships)
+      .where(and(eq(memberships.userId, userId), eq(memberships.status, "active")));
+    accountDisabled = (remaining[0]?.value ?? 0) === 0;
+
+    if (accountDisabled) {
+      await tx
+        .update(users)
+        .set({ status: "disabled", updatedAt: now })
+        .where(eq(users.id, userId));
+      await tx
+        .update(sessions)
+        .set({ revokedAt: now, revokedReason: "account_deleted" })
+        .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
+    }
+
+    await writeAudit(
+      {
+        organizationId: session.organization.id,
+        actorUserId: session.user.id,
+        action: "user.deleted",
+        entityType: "user",
+        entityId: userId,
+        beforeData: {
+          email: target.user.email,
+          role: target.role.code,
+          status: target.membership.status,
+          branchId: target.membership.defaultBranchId,
+        },
+        afterData: { removedFromOrganization: true, accountDisabled },
+        metadata: { requestId: meta.requestId },
+        ipHash: meta.ipHash,
+        userAgent: meta.userAgent,
+      },
+      tx as unknown as Database,
+    );
+  });
+
+  return { ok: true, accountDisabled };
 }
 
 export async function reactivateUser(
@@ -840,6 +1007,36 @@ export async function acceptInvitation(
         updatedAt: now,
       })
       .where(eq(users.id, user.id));
+    const fallbackBranchId =
+      row.invitation.branchId ??
+      (
+        await tx
+          .select({ id: branches.id })
+          .from(branches)
+          .where(
+            and(
+              eq(branches.organizationId, row.invitation.organizationId),
+              eq(branches.isActive, true),
+            ),
+          )
+          .orderBy(asc(branches.createdAt))
+          .limit(1)
+      )[0]?.id ??
+      null;
+    await tx
+      .update(memberships)
+      .set({
+        status: "active",
+        updatedAt: now,
+        ...(fallbackBranchId ? { defaultBranchId: fallbackBranchId } : {}),
+      })
+      .where(
+        and(
+          eq(memberships.organizationId, row.invitation.organizationId),
+          eq(memberships.userId, user.id),
+          isNull(memberships.defaultBranchId),
+        ),
+      );
     await tx
       .update(memberships)
       .set({ status: "active", updatedAt: now })

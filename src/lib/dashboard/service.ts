@@ -1,46 +1,70 @@
-import { and, asc, count, countDistinct, desc, eq, gte, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, sql, type SQL } from "drizzle-orm";
 import type { Database } from "@/lib/db/client";
 import { getDb } from "@/lib/db/client";
-import { PERMISSIONS } from "@/lib/auth/permissions";
 import { requireApiPermission } from "@/lib/auth/guard";
-import { getManagerBranchIds } from "@/lib/auth/scope";
+import { PERMISSIONS } from "@/lib/auth/permissions";
 import type { SessionContext } from "@/lib/auth/session";
+import { requireBranchAccess, resolveBranchId } from "@/lib/branches/service";
+import { dayRange, localDateString } from "@/lib/time/period";
 import {
   auditLogs,
   branches,
-  invitations,
-  memberships,
-  roles,
-  sessions,
+  categories,
+  payments,
+  products,
+  refunds,
+  saleItems,
+  sales,
+  shifts,
   users,
 } from "@/db/schema";
 
 export type DashboardSummary = {
-  organization: { id: string; name: string };
-  branchCount: number;
-  userCounts: { active: number; invited: number; suspended: number };
-  usersByRole: { role: string; name: string; count: number }[];
-  pendingInvitations: number;
-  activeSessions24h: number;
-  recentLogins: {
+  organization: { id: string; name: string; currency: string; timezone: string };
+  branch: { id: string; name: string } | null;
+  dateLabel: string;
+  today: {
+    gross: number;
+    refunds: number;
+    net: number;
+    transactions: number;
+    average: number;
+    itemsSold: number;
+  };
+  yesterday: { gross: number; transactions: number };
+  comparison: { grossPercent: number | null; transactionsPercent: number | null };
+  topProducts: { productId: string | null; name: string; sku: string; quantity: number; revenue: number }[];
+  lowStock: { productId: string; name: string; sku: string; quantity: number; minimumStock: number }[];
+  paymentMethods: { method: string; amount: number; count: number }[];
+  activeShifts: {
     id: string;
-    action: string;
-    actorUserId: string | null;
-    actorName: string | null;
-    createdAt: Date;
-    metadata: string | null;
+    cashierName: string;
+    openingAmount: number;
+    openedAt: Date;
+  }[];
+  recentSales: {
+    id: string;
+    receiptNumber: string;
+    customerName: string | null;
+    cashierName: string;
+    grandTotal: number;
+    status: string;
+    soldAt: Date;
   }[];
   recentActivity: {
     id: string;
     action: string;
     entityType: string;
     entityId: string | null;
-    actorUserId: string | null;
     actorName: string | null;
     createdAt: Date;
-    metadata: string | null;
   }[];
 };
+
+function percentChange(current: number, previous: number): number | null {
+  if (previous === 0) return current === 0 ? 0 : null;
+  return Math.round(((current - previous) / previous) * 1000) / 10;
+}
 
 export async function getDashboardSummary(
   session: SessionContext,
@@ -49,119 +73,182 @@ export async function getDashboardSummary(
 ): Promise<DashboardSummary> {
   requireApiPermission(session, PERMISSIONS.dashboardView);
   const organizationId = session.organization.id;
-  const branchId = options.branchId ?? null;
-  const managerBranchIds =
-    session.membership.roleCode === "manager" ? await getManagerBranchIds(session, db) : null;
+  const timezone = session.organization.timezone;
+  const branchId = await resolveBranchId(session, options.branchId, db);
+  await requireBranchAccess(session, branchId, db);
 
-  const branchConditions: SQL[] = [
-    eq(branches.organizationId, organizationId),
-    eq(branches.isActive, true),
+  const branch = (
+    await db
+      .select({ id: branches.id, name: branches.name })
+      .from(branches)
+      .where(eq(branches.id, branchId))
+      .limit(1)
+  )[0];
+
+  const todayRange = dayRange(new Date(), timezone);
+  const yesterdayDate = new Date(todayRange.from.getTime() - 12 * 60 * 60 * 1000);
+  const yesterdayRange = dayRange(yesterdayDate, timezone);
+
+  const baseConditions: SQL[] = [
+    eq(sales.organizationId, organizationId),
+    eq(sales.branchId, branchId),
   ];
-  if (branchId) {
-    branchConditions.push(eq(branches.id, branchId));
-  }
-  if (managerBranchIds) {
-    if (managerBranchIds.length === 0) {
-      branchConditions.push(sql`1 = 0`);
-    } else {
-      branchConditions.push(inArray(branches.id, managerBranchIds));
-    }
-  }
-  const branchRows = await db
-    .select({ value: count() })
-    .from(branches)
-    .where(and(...branchConditions));
 
-  const membershipScope = [eq(memberships.organizationId, organizationId)];
-  if (branchId) membershipScope.push(eq(memberships.defaultBranchId, branchId));
-  if (managerBranchIds) {
-    membershipScope.push(
-      managerBranchIds.length === 0
-        ? sql`1 = 0`
-        : inArray(memberships.defaultBranchId, managerBranchIds),
+  async function salesTotals(from: Date, to: Date) {
+    const rows = await db
+      .select({
+        gross: sql<number>`coalesce(sum(case when ${sales.status} <> 'voided' then ${sales.grandTotal} else 0 end), 0)`,
+        transactions: sql<number>`count(case when ${sales.status} <> 'voided' then 1 end)`,
+        itemsSold: sql<number>`coalesce(sum(case when ${sales.status} <> 'voided' then (
+          select coalesce(sum(si.quantity), 0) from sale_items si where si.sale_id = ${sales.id}
+        ) else 0 end), 0)`,
+      })
+      .from(sales)
+      .where(
+        and(
+          ...baseConditions,
+          gte(sales.soldAt, from),
+          lte(sales.soldAt, new Date(to.getTime() - 1)),
+        ),
+      );
+    const refundRows = await db
+      .select({ amount: sql<number>`coalesce(sum(${refunds.amount}), 0)` })
+      .from(refunds)
+      .innerJoin(sales, eq(sales.id, refunds.saleId))
+      .where(
+        and(
+          ...baseConditions,
+          eq(refunds.status, "approved"),
+          gte(refunds.createdAt, from),
+          lte(refunds.createdAt, new Date(to.getTime() - 1)),
+        ),
+      );
+    return {
+      gross: Number(rows[0]?.gross ?? 0),
+      transactions: Number(rows[0]?.transactions ?? 0),
+      itemsSold: Number(rows[0]?.itemsSold ?? 0),
+      refunds: Number(refundRows[0]?.amount ?? 0),
+    };
+  }
+
+  const todayTotals = await salesTotals(todayRange.from, todayRange.to);
+  const yesterdayTotals = await salesTotals(yesterdayRange.from, yesterdayRange.to);
+
+  const topProducts = await db
+    .select({
+      productId: saleItems.productId,
+      name: saleItems.productName,
+      sku: saleItems.sku,
+      quantity: sql<number>`coalesce(sum(${saleItems.quantity}), 0)`,
+      revenue: sql<number>`coalesce(sum(${saleItems.lineTotal} - ${saleItems.taxAmount}), 0)`,
+    })
+    .from(saleItems)
+    .innerJoin(sales, eq(sales.id, saleItems.saleId))
+    .where(
+      and(
+        ...baseConditions,
+        sql`${sales.status} <> 'voided'`,
+        gte(sales.soldAt, todayRange.from),
+        lte(sales.soldAt, new Date(todayRange.to.getTime() - 1)),
+      ),
+    )
+    .groupBy(saleItems.productId, saleItems.productName, saleItems.sku)
+    .orderBy(desc(sql`sum(${saleItems.lineTotal} - ${saleItems.taxAmount})`))
+    .limit(5);
+
+  const lowStock = await db
+    .select({
+      productId: products.id,
+      name: products.name,
+      sku: products.sku,
+      quantity: sql<number>`coalesce((
+        select b.quantity from inventory_balances b
+        where b.branch_id = ${branchId} and b.product_id = ${products.id}
+      ), 0)`,
+      minimumStock: products.minimumStock,
+    })
+    .from(products)
+    .where(
+      and(
+        eq(products.organizationId, organizationId),
+        eq(products.status, "active"),
+        eq(products.trackStock, true),
+        sql`coalesce((
+          select b.quantity from inventory_balances b
+          where b.branch_id = ${branchId} and b.product_id = ${products.id}
+        ), 0) <= ${products.minimumStock}`,
+      ),
+    )
+    .orderBy(asc(products.name))
+    .limit(6);
+
+  const paymentRows = await db
+    .select({
+      method: payments.method,
+      amount: sql<number>`coalesce(sum(${payments.amount}), 0)`,
+      count: sql<number>`count(*)`,
+    })
+    .from(payments)
+    .innerJoin(sales, eq(sales.id, payments.saleId))
+    .where(
+      and(
+        ...baseConditions,
+        eq(payments.status, "paid"),
+        sql`${sales.status} <> 'voided'`,
+        gte(sales.soldAt, todayRange.from),
+        lte(sales.soldAt, new Date(todayRange.to.getTime() - 1)),
+      ),
+    )
+    .groupBy(payments.method)
+    .orderBy(desc(sql`sum(${payments.amount})`));
+
+  const changeRows = await db
+    .select({ change: sql<number>`coalesce(sum(${sales.changeTotal}), 0)` })
+    .from(sales)
+    .where(
+      and(
+        ...baseConditions,
+        sql`${sales.status} <> 'voided'`,
+        gte(sales.soldAt, todayRange.from),
+        lte(sales.soldAt, new Date(todayRange.to.getTime() - 1)),
+      ),
     );
-  }
+  const totalChange = Number(changeRows[0]?.change ?? 0);
 
-  const statusRows = await db
-    .select({ status: memberships.status, value: count() })
-    .from(memberships)
-    .where(and(...membershipScope))
-    .groupBy(memberships.status);
-  const userCounts = { active: 0, invited: 0, suspended: 0 };
-  for (const row of statusRows) {
-    if (row.status === "active") userCounts.active = row.value;
-    if (row.status === "invited") userCounts.invited = row.value;
-    if (row.status === "suspended") userCounts.suspended = row.value;
-  }
+  const activeShiftRows = await db
+    .select({
+      id: shifts.id,
+      cashierName: users.name,
+      openingAmount: shifts.openingAmount,
+      openedAt: shifts.openedAt,
+    })
+    .from(shifts)
+    .innerJoin(users, eq(users.id, shifts.cashierId))
+    .where(
+      and(
+        eq(shifts.organizationId, organizationId),
+        eq(shifts.branchId, branchId),
+        eq(shifts.status, "open"),
+      ),
+    )
+    .orderBy(asc(shifts.openedAt))
+    .limit(5);
 
-  const roleRows = await db
-    .select({ role: roles.code, name: roles.name, value: count() })
-    .from(memberships)
-    .innerJoin(roles, eq(roles.id, memberships.roleId))
-    .where(and(...membershipScope))
-    .groupBy(roles.code, roles.name)
-    .orderBy(asc(roles.name));
-
-  const invitationScope: SQL[] = [
-    eq(invitations.organizationId, organizationId),
-    eq(invitations.status, "pending"),
-    sql`${invitations.expiresAt} > ${Date.now()}`,
-  ];
-  if (branchId) invitationScope.push(eq(invitations.branchId, branchId));
-  if (managerBranchIds) {
-    invitationScope.push(
-      managerBranchIds.length === 0
-        ? sql`1 = 0`
-        : inArray(invitations.branchId, managerBranchIds),
-    );
-  }
-  const invitationRows = await db
-    .select({ value: count() })
-    .from(invitations)
-    .where(and(...invitationScope));
-
-  const activeSince = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const sessionScope: SQL[] = [
-    eq(sessions.organizationId, organizationId),
-    isNull(sessions.revokedAt),
-    gte(sessions.lastSeenAt, activeSince),
-  ];
-  if (branchId) {
-    sessionScope.push(
-      sql`${sessions.userId} in (
-        select m.user_id from memberships m
-        where m.organization_id = ${organizationId} and m.default_branch_id = ${branchId}
-      )`,
-    );
-  }
-  if (managerBranchIds) {
-    sessionScope.push(
-      managerBranchIds.length === 0
-        ? sql`1 = 0`
-        : sql`${sessions.userId} in (
-            select m.user_id from memberships m
-            where m.organization_id = ${organizationId}
-              and m.default_branch_id in (${sql.join(
-                managerBranchIds.map((id) => sql`${id}`),
-                sql`, `,
-              )})
-          )`,
-    );
-  }
-  const sessionRows = await db
-    .select({ value: countDistinct(sessions.userId) })
-    .from(sessions)
-    .where(and(...sessionScope));
-
-  const activityConditions: SQL[] = [eq(auditLogs.organizationId, organizationId)];
-  if (branchId) activityConditions.push(eq(auditLogs.branchId, branchId));
-  if (managerBranchIds) {
-    activityConditions.push(
-      managerBranchIds.length === 0
-        ? sql`1 = 0`
-        : inArray(auditLogs.branchId, managerBranchIds),
-    );
-  }
+  const recentSales = await db
+    .select({
+      id: sales.id,
+      receiptNumber: sales.receiptNumber,
+      customerName: sql<string | null>`(select name from customers where id = ${sales.customerId})`,
+      cashierName: users.name,
+      grandTotal: sales.grandTotal,
+      status: sales.status,
+      soldAt: sales.soldAt,
+    })
+    .from(sales)
+    .innerJoin(users, eq(users.id, sales.cashierId))
+    .where(and(...baseConditions))
+    .orderBy(desc(sales.soldAt))
+    .limit(8);
 
   const recentActivity = await db
     .select({
@@ -169,59 +256,98 @@ export async function getDashboardSummary(
       action: auditLogs.action,
       entityType: auditLogs.entityType,
       entityId: auditLogs.entityId,
-      actorUserId: auditLogs.actorUserId,
+      actorName: users.name,
       createdAt: auditLogs.createdAt,
-      metadata: auditLogs.metadata,
     })
     .from(auditLogs)
-    .where(and(...activityConditions))
+    .leftJoin(users, eq(users.id, auditLogs.actorUserId))
+    .where(and(eq(auditLogs.organizationId, organizationId), eq(auditLogs.branchId, branchId)))
     .orderBy(desc(auditLogs.createdAt))
-    .limit(10);
+    .limit(8);
 
-  const loginConditions = [...activityConditions, eq(auditLogs.action, "auth.login.success")];
-  const recentLogins = await db
-    .select({
-      id: auditLogs.id,
-      action: auditLogs.action,
-      actorUserId: auditLogs.actorUserId,
-      createdAt: auditLogs.createdAt,
-      metadata: auditLogs.metadata,
-    })
-    .from(auditLogs)
-    .where(and(...loginConditions))
-    .orderBy(desc(auditLogs.createdAt))
-    .limit(10);
-
-  const actorIds = [
-    ...new Set(
-      [...recentActivity, ...recentLogins]
-        .map((row) => row.actorUserId)
-        .filter((id): id is string => Boolean(id)),
-    ),
-  ];
-  const actorRows =
-    actorIds.length > 0
-      ? await db
-          .select({ id: users.id, name: users.name })
-          .from(users)
-          .where(inArray(users.id, actorIds))
-      : [];
-  const actorNames = new Map(actorRows.map((row) => [row.id, row.name]));
+  const net = todayTotals.gross - todayTotals.refunds;
+  const average =
+    todayTotals.transactions > 0 ? Math.round(net / todayTotals.transactions) : 0;
 
   return {
-    organization: { id: session.organization.id, name: session.organization.name },
-    branchCount: branchRows[0]?.value ?? 0,
-    userCounts,
-    usersByRole: roleRows.map((r) => ({ role: r.role, name: r.name, count: r.value })),
-    pendingInvitations: invitationRows[0]?.value ?? 0,
-    activeSessions24h: sessionRows[0]?.value ?? 0,
-    recentLogins: recentLogins.map((row) => ({
+    organization: {
+      id: organizationId,
+      name: session.organization.name,
+      currency: session.organization.currency,
+      timezone,
+    },
+    branch: branch ?? null,
+    dateLabel: localDateString(new Date(), timezone),
+    today: {
+      gross: todayTotals.gross,
+      refunds: todayTotals.refunds,
+      net,
+      transactions: todayTotals.transactions,
+      average,
+      itemsSold: todayTotals.itemsSold,
+    },
+    yesterday: {
+      gross: yesterdayTotals.gross,
+      transactions: yesterdayTotals.transactions,
+    },
+    comparison: {
+      grossPercent: percentChange(todayTotals.gross, yesterdayTotals.gross),
+      transactionsPercent: percentChange(todayTotals.transactions, yesterdayTotals.transactions),
+    },
+    topProducts: topProducts.map((row) => ({
       ...row,
-      actorName: row.actorUserId ? actorNames.get(row.actorUserId) ?? null : null,
+      quantity: Number(row.quantity),
+      revenue: Number(row.revenue),
     })),
-    recentActivity: recentActivity.map((row) => ({
+    lowStock: lowStock.map((row) => ({
       ...row,
-      actorName: row.actorUserId ? actorNames.get(row.actorUserId) ?? null : null,
+      quantity: Number(row.quantity),
     })),
+    paymentMethods: paymentRows.map((row) => {
+      const isCash = row.method === "cash" || row.method === "tunai";
+      return {
+        method: row.method,
+        amount: Number(row.amount) - (isCash ? totalChange : 0),
+        count: Number(row.count),
+      };
+    }),
+    activeShifts: activeShiftRows.map((row) => ({
+      ...row,
+      openingAmount: Number(row.openingAmount),
+    })),
+    recentSales,
+    recentActivity,
   };
+}
+
+/** Category breakdown used by the dashboard chart. */
+export async function getCategoryBreakdown(
+  session: SessionContext,
+  options: { branchId?: string | null } = {},
+  db: Database = getDb(),
+) {
+  requireApiPermission(session, PERMISSIONS.dashboardView);
+  const organizationId = session.organization.id;
+  const branchId = await resolveBranchId(session, options.branchId, db);
+  const range = dayRange(new Date(), session.organization.timezone);
+  return db
+    .select({
+      categoryName: sql<string>`coalesce(${categories.name}, 'Tanpa kategori')`,
+      revenue: sql<number>`coalesce(sum(${saleItems.lineTotal} - ${saleItems.taxAmount}), 0)`,
+    })
+    .from(saleItems)
+    .innerJoin(sales, eq(sales.id, saleItems.saleId))
+    .leftJoin(products, eq(products.id, saleItems.productId))
+    .leftJoin(categories, eq(categories.id, products.categoryId))
+    .where(
+      and(
+        eq(sales.organizationId, organizationId),
+        eq(sales.branchId, branchId),
+        sql`${sales.status} <> 'voided'`,
+        gte(sales.soldAt, range.from),
+        lte(sales.soldAt, new Date(range.to.getTime() - 1)),
+      ),
+    )
+    .groupBy(categories.name)
+    .orderBy(desc(sql`sum(${saleItems.lineTotal} - ${saleItems.taxAmount})`));
 }

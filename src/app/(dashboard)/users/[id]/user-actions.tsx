@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { apiRequest, ClientApiError } from "@/lib/client/api";
 
-type ConfirmKind = "deactivate" | "revokeSessions" | "revokeInvite";
+type ConfirmKind = "deactivate" | "revokeSessions" | "revokeInvite" | "delete";
 
 type ResetResult = { resetUrl: string; expiresAt: string };
 
@@ -24,6 +24,11 @@ const CONFIRM_COPY: Record<ConfirmKind, { title: string; body: string; confirm: 
     body: "Tautan undangan yang belum dipakai akan berhenti berlaku. Pengguna perlu diundang ulang.",
     confirm: "Ya, cabut undangan",
   },
+  delete: {
+    title: "Hapus pengguna dari organisasi?",
+    body: "Pengguna kehilangan akses ke organisasi ini, undangan tertunda dibatalkan, dan seluruh sesi pada organisasi ini dicabut. Riwayat transaksi dan audit tetap tersimpan. Akun dinonaktifkan bila tidak lagi menjadi anggota organisasi lain.",
+    confirm: "Ya, hapus pengguna",
+  },
 };
 
 export function UserActions({
@@ -33,6 +38,7 @@ export function UserActions({
   activeSessions,
   pendingInvitationId,
   canDeactivate,
+  canDelete,
   canResetPassword,
   canRevokeSessions,
   canRevokeInvite,
@@ -44,6 +50,7 @@ export function UserActions({
   activeSessions: number;
   pendingInvitationId: string | null;
   canDeactivate: boolean;
+  canDelete: boolean;
   canResetPassword: boolean;
   canRevokeSessions: boolean;
   canRevokeInvite: boolean;
@@ -69,6 +76,12 @@ export function UserActions({
         await apiRequest(`/api/users/${userId}/sessions/revoke`, { method: "POST" });
       } else if (kind === "revokeInvite" && pendingInvitationId) {
         await apiRequest(`/api/invitations/${pendingInvitationId}`, { method: "DELETE" });
+      } else if (kind === "delete") {
+        await apiRequest(`/api/users/${userId}`, { method: "DELETE" });
+        setConfirmKind(null);
+        router.push("/users");
+        router.refresh();
+        return;
       } else if (kind === "reset") {
         const result = await apiRequest<ResetResult>(`/api/users/${userId}/password-reset`, {
           method: "POST",
@@ -103,6 +116,7 @@ export function UserActions({
 
   const hasAnyAction =
     (canDeactivate && (status === "active" || status === "suspended")) ||
+    canDelete ||
     canResetPassword ||
     (canRevokeSessions && activeSessions > 0) ||
     (canRevokeInvite && status === "invited" && pendingInvitationId);
@@ -205,6 +219,26 @@ export function UserActions({
               Cabut undangan tertunda
             </button>
           ) : null}
+
+          {canDelete ? (
+            <div className="mt-2 border-t border-line pt-3">
+              <button
+                className="flex h-10 w-full items-center justify-center gap-2 rounded-control border border-brick/30 bg-white px-4 text-sm font-semibold text-brick hover:bg-brick-bg focus-ring disabled:opacity-70"
+                disabled={busy !== null}
+                onClick={() => {
+                  setError(null);
+                  setConfirmKind("delete");
+                }}
+                type="button"
+              >
+                <span className="material-symbols-outlined text-[18px]">delete_forever</span>
+                Hapus pengguna
+              </button>
+              <p className="mt-1.5 text-[11px] leading-4 text-muted">
+                Menghapus keanggotaan pada organisasi ini. Riwayat transaksi tetap tersimpan.
+              </p>
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -265,7 +299,9 @@ export function UserActions({
                     ? "person_off"
                     : confirmKind === "revokeInvite"
                       ? "mail_off"
-                      : "devices_off"}
+                      : confirmKind === "delete"
+                        ? "delete_forever"
+                        : "devices_off"}
                 </span>
               </span>
               <div>
@@ -273,7 +309,9 @@ export function UserActions({
                   {CONFIRM_COPY[confirmKind].title}
                 </h3>
                 <p className="mt-2 text-sm leading-6 text-secondary">
-                  {confirmKind === "revokeInvite" ? CONFIRM_COPY[confirmKind].body : `${name}: ${CONFIRM_COPY[confirmKind].body}`}
+                  {confirmKind === "revokeInvite" || confirmKind === "delete"
+                    ? CONFIRM_COPY[confirmKind].body
+                    : `${name}: ${CONFIRM_COPY[confirmKind].body}`}
                 </p>
               </div>
             </div>

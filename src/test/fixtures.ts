@@ -1,6 +1,6 @@
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as schema from "@/db/schema";
@@ -16,10 +16,10 @@ import { createSession, validateSessionToken } from "@/lib/auth/session";
 import { createId } from "@/lib/ids";
 import type { Database } from "@/lib/db/client";
 
-const MIGRATION_SQL = readFileSync(
-  new URL("../db/migrations/0000_naive_true_believers.sql", import.meta.url),
-  "utf8",
-);
+const MIGRATIONS_DIR = new URL("../db/migrations/", import.meta.url);
+const MIGRATION_FILES = readdirSync(MIGRATIONS_DIR)
+  .filter((file) => file.endsWith(".sql"))
+  .sort();
 
 export type TestContext = {
   db: Database;
@@ -35,9 +35,12 @@ export async function createTestDatabase(): Promise<TestContext> {
   const dir = mkdtempSync(join(tmpdir(), "pos-test-"));
   const client = createClient({ url: `file:${join(dir, "test.db")}` });
 
-  for (const statement of MIGRATION_SQL.split("--> statement-breakpoint")) {
-    const sql = statement.trim();
-    if (sql) await client.execute(sql);
+  for (const file of MIGRATION_FILES) {
+    const sql = readFileSync(new URL(file, MIGRATIONS_DIR), "utf8");
+    for (const statement of sql.split("--> statement-breakpoint")) {
+      const chunk = statement.trim();
+      if (chunk) await client.execute(chunk);
+    }
   }
 
   const db = drizzle(client, { schema }) as Database;

@@ -9,81 +9,74 @@ export type ActivityRow = {
   entityType: string;
   entityId: string | null;
   createdAt: string;
-  metadata: string | null;
 };
 
-const LOGIN_ACTIONS = new Set(["auth.login.success", "auth.login.failed"]);
+type Kind = "success" | "neutral" | "warning" | "danger";
 
-function metadataValue(metadata: string | null, key: string): string | null {
-  if (!metadata) return null;
-  try {
-    const parsed = JSON.parse(metadata) as Record<string, unknown>;
-    const value = parsed[key];
-    return typeof value === "string" ? value : null;
-  } catch {
-    return null;
-  }
-}
+const LABELS: Record<string, { text: string; badge: string; kind: Kind }> = {
+  "sale.create": { text: "mencatat transaksi penjualan.", badge: "Penjualan", kind: "success" },
+  "sale.void": { text: "membatalkan transaksi.", badge: "Void", kind: "danger" },
+  "sale.refund": { text: "memproses refund transaksi.", badge: "Refund", kind: "warning" },
+  "shift.open": { text: "membuka shift kasir.", badge: "Shift", kind: "success" },
+  "shift.close": { text: "menutup shift kasir.", badge: "Shift", kind: "neutral" },
+  "shift.cash_in": { text: "mencatat kas masuk.", badge: "Kas", kind: "success" },
+  "shift.cash_out": { text: "mencatat kas keluar.", badge: "Kas", kind: "warning" },
+  "stock.adjustment": { text: "menyesuaikan stok produk.", badge: "Stok", kind: "warning" },
+  "stock.initial": { text: "mencatat stok awal produk.", badge: "Stok", kind: "neutral" },
+  "stock.opname": { text: "menyelesaikan stock opname.", badge: "Opname", kind: "neutral" },
+  "transfer.create": { text: "membuat transfer stok.", badge: "Transfer", kind: "neutral" },
+  "transfer.receive": { text: "menerima transfer stok.", badge: "Transfer", kind: "success" },
+  "purchase.create": { text: "membuat purchase order.", badge: "Pembelian", kind: "neutral" },
+  "purchase.receive": { text: "menerima barang dari supplier.", badge: "Pembelian", kind: "success" },
+  "purchase.cancel": { text: "membatalkan purchase order.", badge: "Pembelian", kind: "danger" },
+  "product.create": { text: "menambahkan produk baru.", badge: "Katalog", kind: "neutral" },
+  "product.update": { text: "memperbarui produk.", badge: "Katalog", kind: "neutral" },
+  "product.archive": { text: "mengarsipkan produk.", badge: "Katalog", kind: "warning" },
+  "customer.create": { text: "menambahkan pelanggan.", badge: "Pelanggan", kind: "neutral" },
+  "customer.update": { text: "memperbarui pelanggan.", badge: "Pelanggan", kind: "neutral" },
+  "supplier.create": { text: "menambahkan supplier.", badge: "Supplier", kind: "neutral" },
+  "supplier.update": { text: "memperbarui supplier.", badge: "Supplier", kind: "neutral" },
+  "settings.update": { text: "mengubah pengaturan toko.", badge: "Pengaturan", kind: "warning" },
+  "branch.create": { text: "menambahkan cabang baru.", badge: "Cabang", kind: "neutral" },
+  "branch.update": { text: "memperbarui data cabang.", badge: "Cabang", kind: "neutral" },
+  "auth.login.success": { text: "masuk melalui sesi Web.", badge: "Login", kind: "success" },
+  "auth.login.failed": { text: "gagal masuk.", badge: "Gagal", kind: "danger" },
+  "auth.logout": { text: "keluar dari perangkat ini.", badge: "Logout", kind: "neutral" },
+};
 
-function actionLabel(row: ActivityRow): { text: string; badge: string; kind: "success" | "neutral" | "warning" | "danger" } {
+function describe(row: ActivityRow) {
   const actor = row.actorName ?? "Sistem";
-  switch (row.action) {
-    case "auth.login.success":
-      return { text: `${actor} masuk melalui sesi Web.`, badge: "Login", kind: "success" };
-    case "auth.login.failed":
-      return { text: `Percobaan login gagal untuk ${actor}.`, badge: "Gagal", kind: "danger" };
-    case "auth.logout":
-      return { text: `${actor} keluar dari perangkat ini.`, badge: "Logout", kind: "neutral" };
-    case "auth.logout_all":
-      return { text: `${actor} keluar dari semua perangkat.`, badge: "Logout", kind: "warning" };
-    case "user.invited":
-      return {
-        text: `${actor} mengundang ${metadataValue(row.metadata, "email") ?? "pengguna baru"}.`,
-        badge: "Undangan",
-        kind: "neutral",
-      };
-    case "user.invitation_accepted":
-      return { text: `${actor} menerima undangan dan mengaktifkan akun.`, badge: "Aktif", kind: "success" };
-    case "user.updated":
-      return { text: `${actor} memperbarui data pengguna.`, badge: "Perubahan", kind: "neutral" };
-    case "user.role_changed":
-      return { text: `${actor} mengubah role pengguna.`, badge: "Otoritas", kind: "warning" };
-    case "user.deactivated":
-      return { text: `${actor} menonaktifkan akun pengguna.`, badge: "Nonaktif", kind: "danger" };
-    case "user.reactivated":
-      return { text: `${actor} mengaktifkan kembali akun pengguna.`, badge: "Aktif", kind: "success" };
-    case "user.password_reset_requested":
-      return { text: `${actor} membuat tautan reset password.`, badge: "Keamanan", kind: "warning" };
-    case "user.password_changed":
-      return { text: `${actor} mengubah kata sandi akun.`, badge: "Keamanan", kind: "warning" };
-    case "session.revoked":
-      return { text: `${actor} mencabut sesi pengguna.`, badge: "Sesi", kind: "warning" };
-    case "invitation.revoked":
-      return { text: `${actor} mencabut undangan pengguna.`, badge: "Undangan", kind: "danger" };
-    default:
-      return { text: `${actor} melakukan ${row.action.replaceAll(".", " ")}.`, badge: "Aktivitas", kind: "neutral" };
-  }
+  const known = LABELS[row.action];
+  if (known) return { ...known, text: `${actor} ${known.text}` };
+  return {
+    text: `${actor} melakukan ${row.action.replaceAll(".", " ")}.`,
+    badge: "Aktivitas",
+    kind: "neutral" as Kind,
+  };
 }
 
-export function ActivityPanel({
-  rows,
-  timeZone,
-}: {
-  rows: ActivityRow[];
-  timeZone: string;
-}) {
-  const [filter, setFilter] = useState<"all" | "login" | "users">("all");
-  const filtered = useMemo(() => {
-    if (filter === "all") return rows;
-    if (filter === "login") return rows.filter((row) => LOGIN_ACTIONS.has(row.action));
-    return rows.filter((row) => !LOGIN_ACTIONS.has(row.action));
-  }, [filter, rows]);
+const FILTERS = [
+  { key: "all" as const, label: "Semua" },
+  { key: "sales" as const, label: "Penjualan" },
+  { key: "stock" as const, label: "Stok" },
+];
 
-  const tabs = [
-    { key: "all" as const, label: "Semua" },
-    { key: "login" as const, label: "Login" },
-    { key: "users" as const, label: "Perubahan" },
-  ];
+export function ActivityPanel({ rows, timeZone }: { rows: ActivityRow[]; timeZone: string }) {
+  const [filter, setFilter] = useState<"all" | "sales" | "stock">("all");
+  const filtered = useMemo(() => {
+    if (filter === "sales") {
+      return rows.filter((row) => row.action.startsWith("sale.") || row.action.startsWith("shift."));
+    }
+    if (filter === "stock") {
+      return rows.filter(
+        (row) =>
+          row.action.startsWith("stock.") ||
+          row.action.startsWith("transfer.") ||
+          row.action.startsWith("purchase."),
+      );
+    }
+    return rows;
+  }, [filter, rows]);
 
   return (
     <section
@@ -95,25 +88,17 @@ export function ActivityPanel({
           <h2 className="text-xl font-semibold tracking-tight text-ink" id="activity-heading">
             Aktivitas terbaru
           </h2>
-          <p className="mt-0.5 text-[12px] text-muted">
-            Catatan otentikasi dan mutasi akses tim
-          </p>
+          <p className="mt-0.5 text-[12px] text-muted">Jejak audit operasional cabang ini</p>
         </div>
-        <div
-          className="flex items-center rounded-lg border border-line bg-surface-muted p-1 text-[13px]"
-          role="tablist"
-        >
-          {tabs.map((tab) => (
+        <div className="flex items-center rounded-lg border border-line bg-surface-muted p-1 text-[13px]">
+          {FILTERS.map((tab) => (
             <button
-              aria-selected={filter === tab.key}
+              aria-pressed={filter === tab.key}
               className={`rounded px-3 py-1.5 font-medium transition-colors ${
-                filter === tab.key
-                  ? "bg-surface text-ink shadow-sm"
-                  : "text-muted hover:text-ink"
+                filter === tab.key ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink"
               }`}
               key={tab.key}
               onClick={() => setFilter(tab.key)}
-              role="tab"
               type="button"
             >
               {tab.label}
@@ -127,14 +112,13 @@ export function ActivityPanel({
           <span className="material-symbols-outlined text-[28px] text-muted">history</span>
           <p className="mt-2 text-sm font-medium text-ink">Belum ada aktivitas</p>
           <p className="mt-1 max-w-sm text-xs leading-5 text-muted">
-            Aktivitas login dan perubahan akses akan muncul di sini setelah tim mulai menggunakan
-            POS Admin.
+            Aktivitas penjualan, stok, dan perubahan data akan muncul di sini.
           </p>
         </div>
       ) : (
         <div className="divide-y divide-line">
           {filtered.map((row) => {
-            const label = actionLabel(row);
+            const label = describe(row);
             const date = new Date(row.createdAt);
             const time = new Intl.DateTimeFormat("id-ID", {
               hour: "2-digit",
@@ -176,9 +160,7 @@ export function ActivityPanel({
       )}
 
       <div className="mt-4 flex flex-col gap-1 border-t border-line pt-3 text-[12px] text-muted sm:flex-row sm:items-center sm:justify-between">
-        <span>
-          Menampilkan {filtered.length} aktivitas terakhir
-        </span>
+        <span>Menampilkan {filtered.length} aktivitas terakhir</span>
         <span>Zona waktu {timeZone}</span>
       </div>
     </section>
