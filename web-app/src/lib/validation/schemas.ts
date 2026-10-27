@@ -19,6 +19,10 @@ export const loginSchema = z.object({
   next: z.string().max(512).optional(),
 });
 
+export const mobileLoginSchema = loginSchema.extend({
+  deviceName: z.string().trim().max(120).optional(),
+});
+
 export const acceptInvitationSchema = z.object({
   token: z.string().min(10).max(300),
   password,
