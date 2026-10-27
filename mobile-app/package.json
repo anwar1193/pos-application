@@ -1,0 +1,7 @@
+{
+  "name": "mobile-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "POS mobile app (React Native). Belum di-scaffold.",
+  "scripts": {}
+}
